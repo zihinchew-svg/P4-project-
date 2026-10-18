@@ -1,0 +1,452 @@
+diff --git a/CONTRIBUTING.md b/CONTRIBUTING.md
+index 05f3c14..d8cd0a4 100644
+--- a/CONTRIBUTING.md
++++ b/CONTRIBUTING.md
+@@ -16,7 +16,7 @@ git switch -c feat/p4-canvas               # 开自己的分支（命名见 §2
+ # ……改代码……
+ python main.py --check                     # 必须 10/10 绿
+ python selfcheck.py --mutation-demo        # 必须 3 个 [CAUGHT]
+-python -m unittest discover -s tests -v    # 接口回归：55 个用例必须全过
++python -m unittest discover -s tests -v    # 接口回归：62 个用例必须全过
+ git add -A
+ git commit -m "feat: 画布支持 4 倍速回放"
+ git push -u origin feat/p4-canvas          # 首次推这个分支
+diff --git a/README.md b/README.md
+index 0a21ac7..5450d31 100644
+--- a/README.md
++++ b/README.md
+@@ -25,7 +25,7 @@ tools/make_report.py  五章报告 docx 生成（终稿见 reports/）
+ data/                 134 站北京教学路网 + 10 站演示图 + 三站/不连通小图
+ docs/                 验收说明、GitHub 协作指南、API 说明、报告素材、演示 GIF、bench.csv、插图
+ reports/              五章实验报告终稿 docx + PDF（目录已更新，可直接提交）
+-tests/test_api.py     可调用接口回归（55 个 unittest 用例）
++tests/test_api.py     可调用接口回归（62 个 unittest 用例）
+ ```
+ 
+ 最短验证命令（在项目根目录执行）：
+@@ -33,7 +33,7 @@ tests/test_api.py     可调用接口回归（55 个 unittest 用例）
+ ```powershell
+ python main.py --check                         # 10 项自检，退出码 0/1
+ python main.py --smoke _smoke/demo.ps          # 界面冒烟 + 导出画布
+-python -m unittest discover -s tests -v        # 可调用接口回归（55 用例）
++python -m unittest discover -s tests -v        # 可调用接口回归（62 用例）
+ python metro_api.py route --start 苹果园 --end 天通苑北 --json
+ python tools/export_canvas.py docs/figures/my_route.png --demo
+ python tools/record_demo.py                    # 自动录制演示 GIF
+@@ -49,7 +49,7 @@ python tools/prepare_github.py --check         # 仓库体检：协作文件 / C
+ | `python main.py --smoke _smoke/smoke.ps` | 加载→搜索→动画→跳过→导出成功 | 约 3.2 s |
+ | `python tools/export_canvas.py ...` | 1400×900 PNG 导出成功 | 约 3.0 s |
+ | `python tools/record_demo.py` | 自动录制 23 帧、1200×789 演示 GIF | 约 20 s |
+-| `python -m unittest discover -s tests` | 接口 SDK/CLI/HTTP 共 55 个用例全部通过 | 约 2.5 s |
++| `python -m unittest discover -s tests` | 接口 SDK/CLI/HTTP 共 62 个用例全部通过 | 约 2.5 s |
+ | `python metro_api.py route ... --json` | 返回 JSON：79.575 min / 换乘 1 次 | < 0.5 s |
+ | `python tools/serve_api.py --port 8765` | 9 个 HTTP 端点 + 404/400/CORS 冒烟通过 | 启动 < 1 s |
+ | 打开 GUI（含 134 站绘制） | 窗口出现并可交互 | 约 1.6 s |
+@@ -148,7 +148,8 @@ metro-p4/
+ │  ├─ 城市交通路径导航系统_实验报告.docx  # 五章报告终稿（源文件，可用脚本重新生成）
+ │  └─ 城市交通路径导航系统_实验报告.pdf   # 终稿 PDF（35 页，目录已更新，可直接提交）
+ ├─ tests/
+-│  └─ test_api.py             # 可调用接口回归（55 个用例：SDK/CLI/HTTP）
++│  ├─ test_api.py             # 可调用接口回归（42 个用例：SDK/CLI/HTTP）
++│  └─ test_contracts.py       # 跨组兼容/权重/加载器/边表 fallback（20 个用例）
+ ├─ requirements.txt           # Pillow（仅 PNG/GIF 需要）
+ ├─ run.ps1 / run.bat          # 启动脚本
+ └─ _smoke/                    # 冒烟测试输出（可删，已被 .gitignore 忽略）
+@@ -259,6 +260,17 @@ screen_y = height / 2 - (world_y - center_y) * scale + pan_y
+ 自检第 10 项用 AST 扫描源码验证这一点：P3 可以放心把它当纯组件，
+ 换算法、换数据都不用改画布。
+ 
++### 图对象兼容（给 P3 / P1/P2 合并）
++
++`normalise_graph` 不要求 P1/P2 完全照搬本仓库的 dataclass，常见的图对象写法都能画：
++
++* `stations`：list 或 dict（dict 时 key 可当站点 ID）；站点字段支持 `id` / `sid` / `station_id` / `station`；
++* `lines`：list 或 dict（dict 时 key 可当线路 ID）；站序字段支持 `stations` / `path` / `stops` / `station_ids`；
++* **线条目没有站序时，自动从 `graph.edges` 反推站序**：边支持 dict / 普通对象 / 元组，
++  端点字段支持 `from_station/to_station`、`from/to`、`u/v`、`source/target` 等；
++  多条线时按 `line_id` 归属，只有一条线时允许边表省略线路字段；线状图与环线都能还原；
++* `events`：支持 `(kind, sid)` 元组、`{"kind":…, "sid":…}` 字典与纯站点 ID 列表。
++
+ ---
+ 
+ ## 5. 自检闸门（P4-07）
+@@ -463,7 +475,7 @@ Tk 导出的其实是 EPS（`%!PS-Adobe-3.0 EPSF-3.0`）。Windows 资源管理
+ * [`docs/API接口说明.md`](docs/API接口说明.md) —— Python SDK / CLI / HTTP 三套调用的完整说明
+ * [`metro_api.py`](metro_api.py) —— `connect()` / `MetroNavigator` / 命令行入口
+ * [`tools/serve_api.py`](tools/serve_api.py) —— 本地 HTTP JSON 服务（零第三方依赖）
+-* [`tests/test_api.py`](tests/test_api.py) —— 55 个接口回归用例
++* [`tests/test_api.py`](tests/test_api.py) —— 62 个接口/契约回归用例
+ 
+ ---
+ 
+@@ -480,7 +492,7 @@ CI 配置见 [`.github/workflows/selfcheck.yml`](.github/workflows/selfcheck.yml
+ 
+ * `python main.py --check --no-gui` —— 无显示环境跳过第 10 项 GUI，前 9 项必须全绿；
+ * `xvfb-run -a python selfcheck.py --mutation-demo` —— 虚拟显示下跑真实 Tk 窗口，必须 3 个 `[CAUGHT]`；
+-* `python -m unittest discover -s tests -v` —— 可调用接口（SDK/CLI/HTTP）55 个用例。
++* `python -m unittest discover -s tests -v` —— 可调用接口（SDK/CLI/HTTP）62 个用例。
+ 
+ push / PR 到 `main` 自动触发；失败时 Actions 日志里能直接看到 `[FAIL]` 红项与 detail。
+ 
+@@ -537,7 +549,7 @@ python metro_api.py route --start S001 --end S061 --weight distance --json
+ python metro_api.py compare --start S001 --end S061
+ python main.py --cli info                              # 等价入口
+ python tools/serve_api.py --port 8765                  # HTTP：GET /api/route?start=..&end=..
+-python -m unittest discover -s tests -v                # 55 个接口回归用例
++python -m unittest discover -s tests -v                # 62 个接口/契约回归用例
+ ```
+ 
+ * 完整文档（方法 / JSON 结构 / 端点 / 错误码 / FAQ）：[`docs/API接口说明.md`](docs/API接口说明.md)
+diff --git a/docs/API接口说明.md b/docs/API接口说明.md
+index 06b08dd..5d8c2c4 100644
+--- a/docs/API接口说明.md
++++ b/docs/API接口说明.md
+@@ -237,7 +237,7 @@ except MetroAPIError as exc:
+ ## 6. 测试与 CI
+ 
+ ```powershell
+-python -m unittest discover -s tests -v     # 55 个用例，约 2.6 s
++python -m unittest discover -s tests -v     # 62 个用例，约 2.6 s
+ ```
+ 
+ 覆盖：数据加载与规模、站名/ID 解析、已知 OD 的期望值（79.575299 min / 151 扩展）、
+@@ -282,13 +282,13 @@ URL 里中文必须百分号编码（浏览器/`Invoke-RestMethod`/`requests` 
+ | 版本 | 日期 | 变更 |
+ | --- | --- | --- |
+ | 1.0.0 | 2026-10-18 | 首版：Python SDK（`connect`/`MetroNavigator`）、CLI 7 个子命令、HTTP 9 个端点、本说明 |
+-| 1.1.0 | 2026-10-18 | 新增 `weight=time/distance` 多准则（SDK/CLI/HTTP 全链路）；数据支持 per-line `speed_kmh`；画布兼容 P2 的 `sid`/`events` 写法；测试增至 55 个 |
++| 1.1.0 | 2026-10-18 | 新增 `weight=time/distance` 多准则（SDK/CLI/HTTP 全链路）；数据支持 per-line `speed_kmh`；画布兼容 P2 的 `sid`/`events` 写法；测试增至 62 个 |
+ 
+ ## 附：与任务书的对应关系
+ 
+ | 任务书要求 | 本接口的落实 |
+ | --- | --- |
+ | P4 渲染与工程化「给全班可复用的组件」 | `CanvasView` 之外再提供**无界面调用层**，P3 之外的脚本/前端也能用 |
+-| 质量门「新功能有新断言」 | `tests/test_api.py` 55 个用例；CI 独立执行 |
++| 质量门「新功能有新断言」 | `tests/test_api.py` 62 个用例；CI 独立执行 |
+ | 质量门「UI 改动附截图」 | 本接口不改 UI；HTTP 服务用浏览器/curl 可直接演示 |
+ | 零第三方依赖 | 仅标准库；`http.server` 提供 REST |
+diff --git a/docs/P4-验收与交接.md b/docs/P4-验收与交接.md
+index 9f5599b..d99afee 100644
+--- a/docs/P4-验收与交接.md
++++ b/docs/P4-验收与交接.md
+@@ -142,6 +142,7 @@ self.canvas.export(r"_smoke\result.png")
+ | 搜索中切算法 | 自动取消旧动画，只保留新结果 |
+ | 窗口缩到很小 | 隐藏图例/信息卡，站名按空间省略，不重叠 |
+ | 反复 `show_path` | 覆盖旧路径，不残留标签 |
++| 线条目没有 `stations` | 从 `graph.edges` 反推站序（支持 dict/对象/元组边；多线路按 `line_id` 归属） |
+ 
+ ### 不要做的事
+ 
+@@ -164,7 +165,7 @@ print(nav.compare("慈寿寺", "崇文门")["highlights"]) # BFS 少 1 次换乘
+ ```powershell
+ python metro_api.py route --start S001 --end S061 --json
+ python tools/serve_api.py --port 8765              # HTTP：GET /api/route?start=..&end=..
+-python -m unittest discover -s tests -v            # 接口回归（55 用例）
++python -m unittest discover -s tests -v            # 接口回归（62 用例）
+ ```
+ 
+ 方法与 JSON 结构、HTTP 端点、错误码见 [`API接口说明.md`](API接口说明.md)。
+@@ -193,7 +194,7 @@ python -m unittest discover -s tests -v            # 接口回归（55 用例）
+       `python tools/check_report.py` 22/22 通过；图 2-1/3-1/4-1~4-4、表 1-1~4-3 编号连续）
+ - [x] GitHub 协作包自测：`python tools/prepare_github.py --check` 0 问题，
+       `--bundle` 55 条目回读 SHA-256 一致（见 `CONTRIBUTING.md`、`docs/GitHub协作与上传指南.md`）
+-- [x] 可调用接口回归：`python -m unittest discover -s tests -v` 55/55 通过（SDK / CLI / HTTP）
++- [x] 可调用接口回归：`python -m unittest discover -s tests -v` 62/62 通过（SDK / CLI / HTTP）
+ - [x] README 实测：从零到界面约 1 分钟（含装 Pillow），< 5 分钟
+ 
+ ## 6. 已知限制（写进报告 5.4）
+@@ -215,7 +216,7 @@ pip install pillow
+ 
+ python main.py --check
+ python selfcheck.py --mutation-demo
+-python -m unittest discover -s tests -v        # 可调用接口回归（55 用例：SDK/CLI/HTTP）
++python -m unittest discover -s tests -v        # 可调用接口回归（62 用例：SDK/CLI/HTTP）
+ python main.py --smoke _smoke/smoke.ps
+ python tools/export_canvas.py _smoke/demo.png --demo --start S1 --end S8
+ python tools/export_canvas.py --figure-pack
+diff --git a/docs/评审整改记录-2026-10-18.md b/docs/评审整改记录-2026-10-18.md
+index bd3b68c..11a0d6c 100644
+--- a/docs/评审整改记录-2026-10-18.md
++++ b/docs/评审整改记录-2026-10-18.md
+@@ -102,7 +102,7 @@
+ 
+ | 检查 | 结果 |
+ | --- | --- |
+-| `python -m unittest discover -s tests -v` | **55/55 通过**（原 35 + 新增 20：兼容 5 / 加载器 4 / 权重 4 / API·HTTP·CLI 7） |
++| `python -m unittest discover -s tests -v` | **62/62 通过**（原 35 + 评审整改新增 20 + 边表 fallback 7 = 62） |
+ | `python main.py --check` | 10/10 PASS（含 GUI 第 10 项；第 04 项新增双权重断言） |
+ | `python selfcheck.py --mutation-demo` | 3/3 `[CAUGHT]` |
+ | `python tools/check_report.py` | 22/22 通过（报告重新生成后） |
+@@ -110,5 +110,22 @@
+ | `python tools/bench.py`（默认） | 只写 `_smoke/`，`git status` 干净 |
+ | HTTP `weight=distance` | `/api/route?...&weight=distance` 返回 `weight=distance` 且里程更短 |
+ 
+-> 提交与推送：整改提交见 GitHub 仓库 `main` 分支；CI（自检 + mutation + 55 个接口用例）
++> 提交与推送：整改提交见 GitHub 仓库 `main` 分支；CI（自检 + mutation + 62 个接口用例）
+ > 结果以 Actions 页面为准。
++
++## 6. 差异包
++
++`06e182a → b641db7` 的文本补丁、diffstat 与二进制清单见 [`review-fixes/`](review-fixes/README.md)（便于只审阅差异或在旧版本上应用）。
++
++## 7. 追加：线条目缺站序时的边表 fallback
++
++外部图对象可能只给 `edges`（每条边含起终点与 `line_id`），不给每条线路独立的站序。
++`ui/canvas.py::normalise_graph` 已增加 fallback：
++
++* 线路自带 `stations/path/stops/station_ids` 时优先使用原字段，行为不变；
++* 没有站序时，从 `graph.edges` 建无向邻接表并重建站序：多线路按 `line_id` 过滤，
++  单线路图允许边表省略线路字段；线状图精确还原，环线还原整圈；
++* 端点优先取“度数为 1 的最小站 ID”，保证同一份数据每次绘制顺序稳定。
++
++验证：`tests/test_contracts.py::EdgeFallbackTests` 7 条用例（dict/对象/元组边、
++显式站序优先、多线路隔离、环线、无站序无边报错）；unittest 总数 55 → **62**。
+diff --git a/tests/test_contracts.py b/tests/test_contracts.py
+index 88fbf9a..70da19f 100644
+--- a/tests/test_contracts.py
++++ b/tests/test_contracts.py
+@@ -129,6 +129,82 @@ class CanvasCompatTests(unittest.TestCase):
+         self.assertEqual(view.stations, ["S1", "S2"])
+ 
+ 
++class EdgeFallbackTests(unittest.TestCase):
++    """线条目没有 stations 时，从 graph.edges 反推站序（只给边表的图也能画）。"""
++
++    @staticmethod
++    def _graph(lines, edges):
++        stations = [
++            SidStation("S1", "甲", 0.0, 0.0),
++            SidStation("S2", "乙", 1.0, 0.0),
++            SidStation("S3", "丙", 2.0, 0.0),
++            SidStation("S4", "丁", 3.0, 0.0),
++        ]
++        return SimpleNamespace(stations=stations, lines=lines, edges=edges)
++
++    def test_line_without_stations_derives_order_from_edges(self) -> None:
++        line = SimpleNamespace(id="L1", name="一号线", color="#2563EB", loop=False)
++        edges = [
++            {"from": "S2", "to": "S3", "line_id": "L1"},
++            {"from": "S1", "to": "S2", "line_id": "L1"},
++        ]
++        draw = normalise_graph(self._graph([line], edges))
++        self.assertEqual(draw.lines[0].station_ids, ("S1", "S2", "S3"))
++        self.assertEqual(draw.station_lines["S2"], ["L1"])
++
++    def test_explicit_stations_have_priority(self) -> None:
++        line = SimpleNamespace(
++            id="L1", name="一号线", color="#2563EB", loop=False,
++            stations=["S2", "S1"],
++        )
++        edges = [{"from": "S1", "to": "S2", "line_id": "L1"}]
++        draw = normalise_graph(self._graph([line], edges))
++        self.assertEqual(draw.lines[0].station_ids, ("S2", "S1"))
++
++    def test_edges_without_line_id_used_only_for_single_line_graph(self) -> None:
++        line = SimpleNamespace(id="L1", name="一号线", color="#2563EB", loop=False)
++        edges = [("S1", "S2"), ("S2", "S3")]  # 元组、没有 line_id
++        draw = normalise_graph(self._graph([line], edges))
++        self.assertEqual(draw.lines[0].station_ids, ("S1", "S2", "S3"))
++
++    def test_attribute_style_edges_supported(self) -> None:
++        line = SimpleNamespace(id="L1", name="一号线", color="#2563EB", loop=False)
++        edges = [
++            SimpleNamespace(from_station="S1", to_station="S2", line_id="L1"),
++            SimpleNamespace(from_station="S2", to_station="S3", line_id="L1"),
++        ]
++        draw = normalise_graph(self._graph([line], edges))
++        self.assertEqual(draw.lines[0].station_ids, ("S1", "S2", "S3"))
++
++    def test_two_lines_are_separated_by_line_id(self) -> None:
++        l1 = SimpleNamespace(id="L1", name="一号线", color="#2563EB", loop=False)
++        l2 = SimpleNamespace(id="L2", name="二号线", color="#D97706", loop=False)
++        edges = [
++            {"from": "S1", "to": "S2", "line_id": "L1"},
++            {"from": "S3", "to": "S4", "line_id": "L2"},
++        ]
++        draw = normalise_graph(self._graph([l1, l2], edges))
++        by_id = {line.id: line for line in draw.lines}
++        self.assertEqual(by_id["L1"].station_ids, ("S1", "S2"))
++        self.assertEqual(by_id["L2"].station_ids, ("S3", "S4"))
++
++    def test_loop_edges_reconstruct_all_stations(self) -> None:
++        line = SimpleNamespace(id="L1", name="环线", color="#2563EB", loop=True)
++        edges = [
++            {"from": "S1", "to": "S2", "line_id": "L1"},
++            {"from": "S2", "to": "S3", "line_id": "L1"},
++            {"from": "S3", "to": "S1", "line_id": "L1"},
++        ]
++        draw = normalise_graph(self._graph([line], edges))
++        self.assertEqual(len(draw.lines[0].station_ids), 3)
++        self.assertEqual(set(draw.lines[0].station_ids), {"S1", "S2", "S3"})
++
++    def test_no_edges_and_no_stations_raises(self) -> None:
++        line = SimpleNamespace(id="L1", name="一号线", color="#2563EB", loop=False)
++        with self.assertRaises(ValueError):
++            normalise_graph(self._graph([line], []))
++
++
+ class LoaderContractTests(unittest.TestCase):
+     @classmethod
+     def setUpClass(cls) -> None:
+diff --git a/ui/canvas.py b/ui/canvas.py
+index af8e9c0..8bb76d4 100644
+--- a/ui/canvas.py
++++ b/ui/canvas.py
+@@ -391,11 +391,122 @@ def _looks_like_feeder(line: object, name: str) -> bool:
+     return any(word in name for word in ("接驳", "支线", "摆渡", "shuttle", "feeder"))
+ 
+ 
++def _edge_endpoints(edge: object) -> tuple[str, str]:
++    """从一条边里取出 (起点站 ID, 终点站 ID)。
++
++    兼容 dict / 普通对象 / 三元组三种写法，例如：
++    ``{"from":"S1","to":"S2"}``、``Edge(from_station=…, to_station=…)``、
++    ``("S1","S2","L1")``。端点自身也可以是 ``{"id": …}`` / ``{"sid": …}``。
++    """
++    if isinstance(edge, (tuple, list)):
++        if len(edge) < 2:
++            return "", ""
++        return _as_station_id(edge[0]), _as_station_id(edge[1])
++    a = _as_station_id(
++        _get(edge, "from_station", "from_id", "u", "from", "source", "station_a", "a")
++    )
++    b = _as_station_id(
++        _get(edge, "to_station", "to_id", "v", "to", "target", "station_b", "b")
++    )
++    return a, b
++
++
++def _edge_line_id(edge: object) -> str:
++    """从一条边里取出所属线路 ID；没有线路信息时返回空串。"""
++    if isinstance(edge, (tuple, list)):
++        return str(edge[2]).strip() if len(edge) >= 3 and edge[2] is not None else ""
++    raw = _get(edge, "line_id", "line", "lid", "lineId")
++    return str(raw).strip() if raw is not None else ""
++
++
++def _line_order_from_edges(
++    graph: object,
++    line_id: str,
++    known_stations: dict[str, "DrawStation"],
++    *,
++    single_line: bool,
++) -> list[str]:
++    """线条目没写 ``stations`` 时，从 ``graph.edges`` 反推站序（fallback）。
++
++    P2/外部图对象可能只给边表（``edges``：每条边含起终点与 line_id），
++    不给每条线独立的站序。这里做三件事：
++    1. 只保留属于当前线路的边（边没有 line_id 时，仅当图里只有一条线才采用，
++       避免把别的线路的边错误拼进来）；
++    2. 建无向邻接表，逐连通分量找一条“最长简单路径”作为站序；
++       线状图（每站度数 ≤2）会精确还原，环线会还原成整圈；
++    3. 端点优先选度数 1 的最小站 ID，保证同一份数据每次画出来顺序稳定。
++    """
++    raw_edges = _get(graph, "edges", "edge_list", "links", default=[]) or []
++    if isinstance(raw_edges, dict):
++        edge_iter = raw_edges.values()
++    else:
++        edge_iter = raw_edges
++
++    adjacency: dict[str, set[str]] = {}
++    for edge in edge_iter:
++        a, b = _edge_endpoints(edge)
++        if not a or not b or a == b:
++            continue
++        if a not in known_stations or b not in known_stations:
++            continue
++        edge_line = _edge_line_id(edge)
++        if edge_line:
++            if edge_line != line_id:
++                continue
++        elif not single_line:
++            # 图里有多个线路且这条边没写 line_id：无法判断归属，宁可不画
++            continue
++        adjacency.setdefault(a, set()).add(b)
++        adjacency.setdefault(b, set()).add(a)
++
++    if not adjacency:
++        return []
++
++    best: list[str] = []
++    unvisited = set(adjacency)
++    while unvisited:
++        start = min(unvisited)
++        component = {start}
++        stack = [start]
++        while stack:
++            current = stack.pop()
++            for neighbour in adjacency[current]:
++                if neighbour not in component:
++                    component.add(neighbour)
++                    stack.append(neighbour)
++        unvisited -= component
++
++        endpoints = sorted(node for node in component if len(adjacency[node]) == 1)
++        walk_start = endpoints[0] if endpoints else min(component)
++        order = [walk_start]
++        previous: str | None = None
++        current = walk_start
++        while True:
++            candidates = [
++                node
++                for node in adjacency[current]
++                if node != previous and node not in order
++            ]
++            if not candidates:
++                break
++            nxt = min(candidates)
++            order.append(nxt)
++            previous, current = current, nxt
++        if len(order) > len(best):
++            best = order
++    return best
++
++
+ def normalise_graph(graph: object) -> DrawGraph:
+     """把 P1 的图对象转换成画布模型。
+ 
+     这里只读不写，不修改任何 P1 的对象；如果图对象缺字段，会抛出
+     带中文说明的 ValueError，方便 P3 在界面上提示。
++
++    兼容两种线路描述：
++    * 线路对象自带 ``stations`` / ``path`` / ``stops`` / ``station_ids`` 站序；
++    * 只给边表 ``edges``（每条边含起终点与 line_id）时，从边表反推站序
++      （见 :func:`_line_order_from_edges`），避免“有图有边却画不出线路”。
+     """
+     if graph is None:
+         raise ValueError("CanvasView 需要一个图对象，但收到的是 None。")
+@@ -425,17 +536,19 @@ def normalise_graph(graph: object) -> DrawGraph:
+ 
+     raw_lines = _get(graph, "lines", default=[])
+     if isinstance(raw_lines, dict):
+-        line_iter = raw_lines.values()
++        # dict 形式的 lines：允许“key 就是线路 ID、value 里没有 id 字段”
++        line_items: list[tuple[object | None, object]] = list(raw_lines.items())
+     else:
+-        line_iter = raw_lines or []
++        line_items = [(None, item) for item in (raw_lines or [])]
++    single_line = len(line_items) == 1
+ 
+     lines: list[DrawLine] = []
+     station_lines: dict[str, list[str]] = {sid: [] for sid in stations}
+     segments: dict[tuple[str, str], str] = {}
+ 
+-    for index, item in enumerate(line_iter):
++    for index, (key, item) in enumerate(line_items):
+         lid = _as_station_id(_get(item, "id", "line_id", default=""))
+-        lid = lid or f"L{index + 1}"
++        lid = lid or (str(key) if key is not None else f"L{index + 1}")
+         name = str(_get(item, "name", "title", default=lid))
+ 
+         raw_ids = _get(item, "stations", "path", "stops", "station_ids", default=[])
+@@ -445,6 +558,9 @@ def normalise_graph(graph: object) -> DrawGraph:
+             # 跳过不存在的站点，避免一条坏数据把整张图画崩
+             if sid in stations and (not ids or ids[-1] != sid):
+                 ids.append(sid)
++        if not ids:
++            # fallback：线条目没有站序时，从 graph.edges 反推（兼容只给边表的图）
++            ids = _line_order_from_edges(graph, lid, stations, single_line=single_line)
+         if not ids:
+             continue
+ 

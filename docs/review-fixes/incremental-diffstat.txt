@@ -1,0 +1,8 @@
+ CONTRIBUTING.md                 |   2 +-
+ README.md                       |  26 ++++++---
+ docs/API接口说明.md             |   6 +-
+ docs/P4-验收与交接.md           |   7 ++-
+ docs/评审整改记录-2026-10-18.md |  21 ++++++-
+ tests/test_contracts.py         |  76 ++++++++++++++++++++++++
+ ui/canvas.py                    | 124 ++++++++++++++++++++++++++++++++++++++--
+ 7 files changed, 242 insertions(+), 20 deletions(-)
