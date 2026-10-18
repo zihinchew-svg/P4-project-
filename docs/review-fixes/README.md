@@ -45,3 +45,7 @@ python tools/prepare_github.py --check --strict
 - 补丁 SHA-256：`6fbc6f884d8e080dea0b790122477385c497d519276f7a7e87631956d1ce1d32`
 - 应用后文本文件变更应为 24 个；再按 `binary-files.json` 校验两个报告文件的 SHA-256。
 - 整改逐项说明见 [`../评审整改记录-2026-10-18.md`](../评审整改记录-2026-10-18.md)。
+
+> 注意：本补丁对应 `b641db7`（当时 unittest 为 55）；此后 `main` 又追加了
+> 「线条目缺站序时的 `graph.edges` fallback」（tests 增至 62）。差异包保持历史快照，
+> 最新代码与测试请直接使用 `main` 的当前 HEAD。

@@ -237,7 +237,7 @@ except MetroAPIError as exc:
 ## 6. 测试与 CI
 
 ```powershell
-python -m unittest discover -s tests -v     # 55 个用例，约 2.6 s
+python -m unittest discover -s tests -v     # 62 个用例，约 2.6 s
 ```
 
 覆盖：数据加载与规模、站名/ID 解析、已知 OD 的期望值（79.575299 min / 151 扩展）、
@@ -282,13 +282,13 @@ URL 里中文必须百分号编码（浏览器/`Invoke-RestMethod`/`requests` �
 | 版本 | 日期 | 变更 |
 | --- | --- | --- |
 | 1.0.0 | 2026-10-18 | 首版：Python SDK（`connect`/`MetroNavigator`）、CLI 7 个子命令、HTTP 9 个端点、本说明 |
-| 1.1.0 | 2026-10-18 | 新增 `weight=time/distance` 多准则（SDK/CLI/HTTP 全链路）；数据支持 per-line `speed_kmh`；画布兼容 P2 的 `sid`/`events` 写法；测试增至 55 个 |
+| 1.1.0 | 2026-10-18 | 新增 `weight=time/distance` 多准则（SDK/CLI/HTTP 全链路）；数据支持 per-line `speed_kmh`；画布兼容 P2 的 `sid`/`events` 写法；测试增至 62 个 |
 
 ## 附：与任务书的对应关系
 
 | 任务书要求 | 本接口的落实 |
 | --- | --- |
 | P4 渲染与工程化「给全班可复用的组件」 | `CanvasView` 之外再提供**无界面调用层**，P3 之外的脚本/前端也能用 |
-| 质量门「新功能有新断言」 | `tests/test_api.py` 55 个用例；CI 独立执行 |
+| 质量门「新功能有新断言」 | `tests/test_api.py` 62 个用例；CI 独立执行 |
 | 质量门「UI 改动附截图」 | 本接口不改 UI；HTTP 服务用浏览器/curl 可直接演示 |
 | 零第三方依赖 | 仅标准库；`http.server` 提供 REST |

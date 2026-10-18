@@ -391,11 +391,122 @@ def _looks_like_feeder(line: object, name: str) -> bool:
     return any(word in name for word in ("接驳", "支线", "摆渡", "shuttle", "feeder"))
 
 
+def _edge_endpoints(edge: object) -> tuple[str, str]:
+    """从一条边里取出 (起点站 ID, 终点站 ID)。
+
+    兼容 dict / 普通对象 / 三元组三种写法，例如：
+    ``{"from":"S1","to":"S2"}``、``Edge(from_station=…, to_station=…)``、
+    ``("S1","S2","L1")``。端点自身也可以是 ``{"id": …}`` / ``{"sid": …}``。
+    """
+    if isinstance(edge, (tuple, list)):
+        if len(edge) < 2:
+            return "", ""
+        return _as_station_id(edge[0]), _as_station_id(edge[1])
+    a = _as_station_id(
+        _get(edge, "from_station", "from_id", "u", "from", "source", "station_a", "a")
+    )
+    b = _as_station_id(
+        _get(edge, "to_station", "to_id", "v", "to", "target", "station_b", "b")
+    )
+    return a, b
+
+
+def _edge_line_id(edge: object) -> str:
+    """从一条边里取出所属线路 ID；没有线路信息时返回空串。"""
+    if isinstance(edge, (tuple, list)):
+        return str(edge[2]).strip() if len(edge) >= 3 and edge[2] is not None else ""
+    raw = _get(edge, "line_id", "line", "lid", "lineId")
+    return str(raw).strip() if raw is not None else ""
+
+
+def _line_order_from_edges(
+    graph: object,
+    line_id: str,
+    known_stations: dict[str, "DrawStation"],
+    *,
+    single_line: bool,
+) -> list[str]:
+    """线条目没写 ``stations`` 时，从 ``graph.edges`` 反推站序（fallback）。
+
+    P2/外部图对象可能只给边表（``edges``：每条边含起终点与 line_id），
+    不给每条线独立的站序。这里做三件事：
+    1. 只保留属于当前线路的边（边没有 line_id 时，仅当图里只有一条线才采用，
+       避免把别的线路的边错误拼进来）；
+    2. 建无向邻接表，逐连通分量找一条“最长简单路径”作为站序；
+       线状图（每站度数 ≤2）会精确还原，环线会还原成整圈；
+    3. 端点优先选度数 1 的最小站 ID，保证同一份数据每次画出来顺序稳定。
+    """
+    raw_edges = _get(graph, "edges", "edge_list", "links", default=[]) or []
+    if isinstance(raw_edges, dict):
+        edge_iter = raw_edges.values()
+    else:
+        edge_iter = raw_edges
+
+    adjacency: dict[str, set[str]] = {}
+    for edge in edge_iter:
+        a, b = _edge_endpoints(edge)
+        if not a or not b or a == b:
+            continue
+        if a not in known_stations or b not in known_stations:
+            continue
+        edge_line = _edge_line_id(edge)
+        if edge_line:
+            if edge_line != line_id:
+                continue
+        elif not single_line:
+            # 图里有多个线路且这条边没写 line_id：无法判断归属，宁可不画
+            continue
+        adjacency.setdefault(a, set()).add(b)
+        adjacency.setdefault(b, set()).add(a)
+
+    if not adjacency:
+        return []
+
+    best: list[str] = []
+    unvisited = set(adjacency)
+    while unvisited:
+        start = min(unvisited)
+        component = {start}
+        stack = [start]
+        while stack:
+            current = stack.pop()
+            for neighbour in adjacency[current]:
+                if neighbour not in component:
+                    component.add(neighbour)
+                    stack.append(neighbour)
+        unvisited -= component
+
+        endpoints = sorted(node for node in component if len(adjacency[node]) == 1)
+        walk_start = endpoints[0] if endpoints else min(component)
+        order = [walk_start]
+        previous: str | None = None
+        current = walk_start
+        while True:
+            candidates = [
+                node
+                for node in adjacency[current]
+                if node != previous and node not in order
+            ]
+            if not candidates:
+                break
+            nxt = min(candidates)
+            order.append(nxt)
+            previous, current = current, nxt
+        if len(order) > len(best):
+            best = order
+    return best
+
+
 def normalise_graph(graph: object) -> DrawGraph:
     """把 P1 的图对象转换成画布模型。
 
     这里只读不写，不修改任何 P1 的对象；如果图对象缺字段，会抛出
     带中文说明的 ValueError，方便 P3 在界面上提示。
+
+    兼容两种线路描述：
+    * 线路对象自带 ``stations`` / ``path`` / ``stops`` / ``station_ids`` 站序；
+    * 只给边表 ``edges``（每条边含起终点与 line_id）时，从边表反推站序
+      （见 :func:`_line_order_from_edges`），避免“有图有边却画不出线路”。
     """
     if graph is None:
         raise ValueError("CanvasView 需要一个图对象，但收到的是 None。")
@@ -425,17 +536,19 @@ def normalise_graph(graph: object) -> DrawGraph:
 
     raw_lines = _get(graph, "lines", default=[])
     if isinstance(raw_lines, dict):
-        line_iter = raw_lines.values()
+        # dict 形式的 lines：允许“key 就是线路 ID、value 里没有 id 字段”
+        line_items: list[tuple[object | None, object]] = list(raw_lines.items())
     else:
-        line_iter = raw_lines or []
+        line_items = [(None, item) for item in (raw_lines or [])]
+    single_line = len(line_items) == 1
 
     lines: list[DrawLine] = []
     station_lines: dict[str, list[str]] = {sid: [] for sid in stations}
     segments: dict[tuple[str, str], str] = {}
 
-    for index, item in enumerate(line_iter):
+    for index, (key, item) in enumerate(line_items):
         lid = _as_station_id(_get(item, "id", "line_id", default=""))
-        lid = lid or f"L{index + 1}"
+        lid = lid or (str(key) if key is not None else f"L{index + 1}")
         name = str(_get(item, "name", "title", default=lid))
 
         raw_ids = _get(item, "stations", "path", "stops", "station_ids", default=[])
@@ -445,6 +558,9 @@ def normalise_graph(graph: object) -> DrawGraph:
             # 跳过不存在的站点，避免一条坏数据把整张图画崩
             if sid in stations and (not ids or ids[-1] != sid):
                 ids.append(sid)
+        if not ids:
+            # fallback：线条目没有站序时，从 graph.edges 反推（兼容只给边表的图）
+            ids = _line_order_from_edges(graph, lid, stations, single_line=single_line)
         if not ids:
             continue
 

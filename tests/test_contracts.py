@@ -129,6 +129,82 @@ class CanvasCompatTests(unittest.TestCase):
         self.assertEqual(view.stations, ["S1", "S2"])
 
 
+class EdgeFallbackTests(unittest.TestCase):
+    """线条目没有 stations 时，从 graph.edges 反推站序（只给边表的图也能画）。"""
+
+    @staticmethod
+    def _graph(lines, edges):
+        stations = [
+            SidStation("S1", "甲", 0.0, 0.0),
+            SidStation("S2", "乙", 1.0, 0.0),
+            SidStation("S3", "丙", 2.0, 0.0),
+            SidStation("S4", "丁", 3.0, 0.0),
+        ]
+        return SimpleNamespace(stations=stations, lines=lines, edges=edges)
+
+    def test_line_without_stations_derives_order_from_edges(self) -> None:
+        line = SimpleNamespace(id="L1", name="一号线", color="#2563EB", loop=False)
+        edges = [
+            {"from": "S2", "to": "S3", "line_id": "L1"},
+            {"from": "S1", "to": "S2", "line_id": "L1"},
+        ]
+        draw = normalise_graph(self._graph([line], edges))
+        self.assertEqual(draw.lines[0].station_ids, ("S1", "S2", "S3"))
+        self.assertEqual(draw.station_lines["S2"], ["L1"])
+
+    def test_explicit_stations_have_priority(self) -> None:
+        line = SimpleNamespace(
+            id="L1", name="一号线", color="#2563EB", loop=False,
+            stations=["S2", "S1"],
+        )
+        edges = [{"from": "S1", "to": "S2", "line_id": "L1"}]
+        draw = normalise_graph(self._graph([line], edges))
+        self.assertEqual(draw.lines[0].station_ids, ("S2", "S1"))
+
+    def test_edges_without_line_id_used_only_for_single_line_graph(self) -> None:
+        line = SimpleNamespace(id="L1", name="一号线", color="#2563EB", loop=False)
+        edges = [("S1", "S2"), ("S2", "S3")]  # 元组、没有 line_id
+        draw = normalise_graph(self._graph([line], edges))
+        self.assertEqual(draw.lines[0].station_ids, ("S1", "S2", "S3"))
+
+    def test_attribute_style_edges_supported(self) -> None:
+        line = SimpleNamespace(id="L1", name="一号线", color="#2563EB", loop=False)
+        edges = [
+            SimpleNamespace(from_station="S1", to_station="S2", line_id="L1"),
+            SimpleNamespace(from_station="S2", to_station="S3", line_id="L1"),
+        ]
+        draw = normalise_graph(self._graph([line], edges))
+        self.assertEqual(draw.lines[0].station_ids, ("S1", "S2", "S3"))
+
+    def test_two_lines_are_separated_by_line_id(self) -> None:
+        l1 = SimpleNamespace(id="L1", name="一号线", color="#2563EB", loop=False)
+        l2 = SimpleNamespace(id="L2", name="二号线", color="#D97706", loop=False)
+        edges = [
+            {"from": "S1", "to": "S2", "line_id": "L1"},
+            {"from": "S3", "to": "S4", "line_id": "L2"},
+        ]
+        draw = normalise_graph(self._graph([l1, l2], edges))
+        by_id = {line.id: line for line in draw.lines}
+        self.assertEqual(by_id["L1"].station_ids, ("S1", "S2"))
+        self.assertEqual(by_id["L2"].station_ids, ("S3", "S4"))
+
+    def test_loop_edges_reconstruct_all_stations(self) -> None:
+        line = SimpleNamespace(id="L1", name="环线", color="#2563EB", loop=True)
+        edges = [
+            {"from": "S1", "to": "S2", "line_id": "L1"},
+            {"from": "S2", "to": "S3", "line_id": "L1"},
+            {"from": "S3", "to": "S1", "line_id": "L1"},
+        ]
+        draw = normalise_graph(self._graph([line], edges))
+        self.assertEqual(len(draw.lines[0].station_ids), 3)
+        self.assertEqual(set(draw.lines[0].station_ids), {"S1", "S2", "S3"})
+
+    def test_no_edges_and_no_stations_raises(self) -> None:
+        line = SimpleNamespace(id="L1", name="一号线", color="#2563EB", loop=False)
+        with self.assertRaises(ValueError):
+            normalise_graph(self._graph([line], []))
+
+
 class LoaderContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
